@@ -28,15 +28,15 @@
 
 <div class="container">
     <h1>Affiliate Triage Agent <span style="color: #6e7781; font-weight: 200;">v1.0</span></h1>
-    <div id="loading-msg">Status: Loading Python & Pandas (this may take 10 seconds)...</div>
-    <div id="table-area"></div>
+    <div id="status">Status: Loading Python & Pandas (this may take 10 seconds)...</div>
+    <div id="results"></div>
 
     <script type="py">
         import pandas as pd
         from datetime import datetime
-        from pyscript import display, document
+        from pyscript import document
 
-        # Test Data
+        # 1. Setup Data
         data = [
             ['TXN_1001', 'AFF_888', '2026-02-02 10:00:00', '2026-02-02 10:05:00', '45.12.19.101', 'US', 'US', 'Active'],
             ['TXN_1004', 'AFF_666', '2026-02-02 11:00:01', '2026-02-02 11:00:03', '192.168.0.1', 'US', 'US', 'Active'],
@@ -45,43 +45,69 @@
         ]
         df = pd.DataFrame(data, columns=['txn_id', 'aff_id', 'click_time', 'post_time', 'ip', 'geo_ip', 'billing_country', 'crm_status'])
 
-        def process_triage():
-            rows_html = ""
-            for idx, row in df.iterrows():
-                score = 0
-                reasons = []
-                
-                # Logic: Velocity
-                fmt = '%Y-%m-%d %H:%M:%S'
-                dt = (datetime.strptime(row['post_time'], fmt) - datetime.strptime(row['click_time'], fmt)).total_seconds()
-                if dt < 15:
-                    score += 50
-                    reasons.append(f"Fast Velocity ({int(dt)}s)")
-                
-                # Logic: CRM Status
-                if row['crm_status'] == 'Chargeback':
-                    score += 100
-                    reasons.append("Chargeback")
-
-                # Logic: Geo
-                if row['geo_ip'] != row['billing_country']:
-                    score += 25
-                    reasons.append("Geo Mismatch")
-
-                decision = "HOLD" if score >= 60 else "REVIEW" if score >= 30 else "PAY"
-                badge = f'<span class="badge badge-{decision.lower()}">{decision}</span>'
-                
-                rows_html += f"<tr><td>{row['txn_id']}</td><td>{score}</td><td>{badge}</td><td>{', '.join(reasons) if reasons else 'Clean'}</td></tr>"
+        # 2. Logic Function
+        def get_decision(row):
+            score = 0
+            reasons = []
             
-            return rows_html
+            # Velocity Check
+            fmt = '%Y-%m-%d %H:%M:%S'
+            t1 = datetime.strptime(row['click_time'], fmt)
+            t2 = datetime.strptime(row['post_time'], fmt)
+            seconds = (t2 - t1).total_seconds()
+            
+            if seconds < 15:
+                score += 50
+                reasons.append(f"Fast Velocity ({int(seconds)}s)")
+            
+            # CRM Check
+            if row['crm_status'] == 'Chargeback':
+                score += 100
+                reasons.append("Chargeback")
+            
+            # Geo Check
+            if row['geo_ip'] != row['billing_country']:
+                score += 25
+                reasons.append("Geo Mismatch")
 
-        # Generate Table
-        html_out = f"""
-        <table>
-            <thead><tr><th>TXN ID</th><th>Score</th><th>Decision</th><th>Evidence</th></tr></thead>
-            <tbody>{process_triage()}</tbody>
-        </table>
-        """
+            # Final Triage
+            decision = "PAY"
+            if score >= 60:
+                decision = "HOLD"
+            elif score >= 30:
+                decision = "REVIEW"
+                
+            return decision, score, reasons
+
+        # 3. Build HTML Output
+        # (Building this as a simple string to avoid SyntaxErrors)
+        final_html = "<table><thead><tr><th>TXN ID</th><th>Score</th><th>Decision</th><th>Evidence</th></tr></thead><tbody>"
+
+        for _, row in df.iterrows():
+            decision, score, reasons = get_decision(row)
+            
+            # Create badge HTML
+            badge_class = "badge badge-" + decision.lower()
+            badge_html = f"<span class='{badge_class}'>{decision}</span>"
+            
+            # Create reason text
+            reason_text = "Clean"
+            if len(reasons) > 0:
+                reason_text = ", ".join(reasons)
+
+            # Add row
+            final_html += f"<tr><td>{row['txn_id']}</td><td>{score}</td><td>{badge_html}</td><td>{reason_text}</td></tr>"
+
+        final_html += "</tbody></table>"
+
+        # 4. Update the Page
+        # We target the IDs exactly as defined in the HTML above
+        status_div = document.getElementById("status")
+        status_div.style.display = "none"
         
-        document.getElementById("loading-msg").style.display = "none"
-        document.getElementById("
+        results_div = document.getElementById("results")
+        results_div.innerHTML = final_html
+    </script>
+</div>
+</body>
+</html>
